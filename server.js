@@ -3,6 +3,7 @@ const app = express();
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const mongoose = require("mongoose");
+const exphbs = require("express-handlebars");
 
 require("dotenv").config();
 const mongoURI = process.env["MONGODB_URI"];
@@ -12,8 +13,11 @@ mongoose.connect(mongoURI, { useNewUrlParser: true, useUnifiedTopology: true });
 app.use(bodyParser.urlencoded({ extended: false })).use(bodyParser.json());
 app.use(cors());
 app.use(express.static("public"));
+
+app.engine("handlebars", exphbs());
+app.set("view engine", "handlebars");
 app.get("/", (req, res) => {
-  res.sendFile(__dirname + "/public");
+  res.render("home");
 });
 
 const Schema = mongoose.Schema;
@@ -51,7 +55,10 @@ function isValidDate(dateString) {
 app.post("/api/users", (req, res) => {
   UserModel.findOne({ username: req.body.username }, (err, data) => {
     if (data) {
-      res.send("That username is already taken");
+      res.render("home", {
+        error: true,
+        message: "That username is already taken",
+      });
     } else {
       const newUser = new UserModel({
         username: req.body.username,
@@ -60,8 +67,7 @@ app.post("/api/users", (req, res) => {
       });
       newUser.save(function (err, data) {
         if (err) return console.log(err);
-        res.sendFile(__dirname + "/index.html");
-        document.getElementById("return");
+        res.render("home", data);
       });
     }
   });
@@ -86,9 +92,11 @@ app.post("/api/users/username/exercises", (req, res) => {
   }
   dateToSave = dateToSave.toDateString();
   UserModel.findOne({ username: req.body.username }, (err, data) => {
-    console.log(data);
     if (!data) {
-      res.send("oops");
+      res.render("home", {
+        error: true,
+        message: "Could not find that user",
+      });
     } else {
       data.log.push({
         description: req.body.description,
@@ -98,6 +106,7 @@ app.post("/api/users/username/exercises", (req, res) => {
       data.count += 1;
       data.save(function (err, data) {
         if (err) return console.log(err);
+        res.render("home", data);
       });
       const resolution = {
         _id: data.id,
@@ -106,7 +115,6 @@ app.post("/api/users/username/exercises", (req, res) => {
         duration: parseInt(req.body.duration),
         date: dateToSave,
       };
-      res.send(resolution);
     }
   });
 });
@@ -124,30 +132,36 @@ app.get("/api/users", (req, res) => {
 //Get user Logs
 app.get("/api/users/:username/logs", (req, res) => {
   UserModel.findOne({ username: req.params.username }, (err, data) => {
-    if (err) {
-      res.send("Invalid ID");
+    if (data === null) {
+      res.render("home", {
+        error: true,
+        message: "Could not find that user",
+      });
+    } else {
+      var resUser = {
+        username: data.username,
+        _id: data._id.toString(),
+        count: data.count,
+      };
+      var newLog = data.log;
+      if (req.query.from) {
+        newLog = newLog.filter(
+          (d) => new Date(d.date) > new Date(req.query.from)
+        );
+        resUser.from = new Date(req.query.from).toDateString();
+      }
+      if (req.query.to) {
+        newLog = newLog.filter(
+          (d) => new Date(d.date) < new Date(req.query.to)
+        );
+        resUser.to = new Date(req.query.to).toDateString();
+      }
+      if (req.query.limit) {
+        newLog = newLog.slice(0, req.query.limit);
+      }
+      resUser.log = newLog;
+      res.render("home", resUser);
     }
-    var resUser = {
-      username: data.username,
-      _id: data._id.toString(),
-      count: data.count,
-    };
-    var newLog = data.log;
-    if (req.query.from) {
-      newLog = newLog.filter(
-        (d) => new Date(d.date) > new Date(req.query.from)
-      );
-      resUser.from = new Date(req.query.from).toDateString();
-    }
-    if (req.query.to) {
-      newLog = newLog.filter((d) => new Date(d.date) < new Date(req.query.to));
-      resUser.to = new Date(req.query.to).toDateString();
-    }
-    if (req.query.limit) {
-      newLog = newLog.slice(0, req.query.limit);
-    }
-    resUser.log = newLog;
-    res.send(resUser);
   });
 });
 
